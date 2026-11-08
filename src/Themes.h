@@ -88,4 +88,4 @@ struct Theme {
 
 constexpr int ThemeCount = 4;
 
-const std::array<Theme, ThemeCount>& Themes();
+const std::array<Theme, ThemeCount>& themes();

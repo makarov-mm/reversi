@@ -5,22 +5,22 @@
 using namespace math;
 
 namespace {
+    constexpr float MinPitch = 0.22f, MaxPitch = 1.53f;
+    constexpr float MinDistance = 8.0f, MaxDistance = 26.0f;
+    constexpr Vec3 Target{ .x = 0, .y = 0.15f, .z = 0 };
 
-constexpr float MinPitch = 0.22f, MaxPitch = 1.53f;
-constexpr float MinDistance = 8.0f, MaxDistance = 26.0f;
-const Vec3 Target{0, 0.15f, 0};
+    // The angle nearest to `current` that points the same way as `angle`.
+    float Unwrap(float angle, float current)
+    {
+        while (angle - current > Pi)
+            angle -= 2 * Pi;
 
-// The angle nearest to `current` that points the same way as `angle`.
-float Unwrap(float angle, float current)
-{
-    while (angle - current > Pi)
-        angle -= 2 * Pi;
-    while (angle - current < -Pi)
-        angle += 2 * Pi;
-    return angle;
+        while (angle - current < -Pi)
+            angle += 2 * Pi;
+
+        return angle;
+    }
 }
-
-} // namespace
 
 // Black looks from +z, where row 8 is near; White from the other side.
 void OrbitCamera::FaceSide(reversi::Color side)

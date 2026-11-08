@@ -9,7 +9,6 @@
 #include <algorithm>
 #include <bit>
 #include <cmath>
-#include <cstring>
 #include <format>
 #include <random>
 #include <stdexcept>
@@ -22,67 +21,63 @@ using ui::Rect;
 using ui::Rgba;
 
 namespace {
+    constexpr wchar_t ClassName[] = L"Reversi3D.Window";
+    constexpr float PanelWidth = 344, PanelMargin = 16;
 
-constexpr wchar_t ClassName[] = L"Reversi3D.Window";
-constexpr float PanelWidth = 344, PanelMargin = 16;
+    enum Widget {
+        HelpButton = 1,
+        UndoButton,
+        RedoButton,
+        HintButton,
+        NewGameButton,
+        FlipButton,
+        ModeSelector,
+        LevelSelector = ModeSelector + 2,
+        MovesSelector = LevelSelector + 2,
+        ThemeSelector = MovesSelector + 2,
+        SoundButton = ThemeSelector + 2,
+        LanguageButton,
+        ModalWidgets = 100, // the widgets of the help
+        HelpClose,
+    };
 
-enum Widget {
-    HelpButton = 1,
-    UndoButton,
-    RedoButton,
-    HintButton,
-    NewGameButton,
-    FlipButton,
-    ModeSelector,
-    LevelSelector = ModeSelector + 2,
-    MovesSelector = LevelSelector + 2,
-    ThemeSelector = MovesSelector + 2,
-    SoundButton = ThemeSelector + 2,
-    LanguageButton,
-    ModalWidgets = 100, // the widgets of the help
-    HelpClose,
-};
+    constexpr ui::Color TextColor = Rgba(236, 239, 245);
+    constexpr ui::Color MutedColor = Rgba(150, 158, 176);
+    constexpr ui::Color BlackDisc = Rgba(22, 22, 26);
+    constexpr ui::Color WhiteDisc = Rgba(238, 236, 230);
+    constexpr ui::Color DiscRim = Rgba(120, 125, 140);
 
-constexpr ui::Color TextColor = Rgba(236, 239, 245);
-constexpr ui::Color MutedColor = Rgba(150, 158, 176);
-constexpr ui::Color BlackDisc = Rgba(22, 22, 26);
-constexpr ui::Color WhiteDisc = Rgba(238, 236, 230);
-constexpr ui::Color DiscRim = Rgba(120, 125, 140);
-
-// Depth, time, the depth of the exact ending, and the randomness of each level.
-reversi::SearchLimits LevelLimits(int level, int ply, std::uint64_t seed)
-{
-    reversi::SearchLimits limits;
-    switch (level) {
-    case 1: limits = {1, 2000, 0, 900, seed}; break;
-    case 2: limits = {2, 2000, 8, 300, seed}; break;
-    case 3: limits = {4, 2000, 12, 80, seed}; break;
-    case 4: limits = {8, 1500, 16, 0, seed}; break;
-    default: limits = {60, 3500, 20, 0, seed}; break;
+    // Depth, time, the depth of the exact ending, and the randomness of each level.
+    reversi::SearchLimits LevelLimits(int level, int ply, std::uint64_t seed)
+    {
+        reversi::SearchLimits limits;
+        switch (level) {
+        case 1: limits = { 1, 2000, 0, 900, seed }; break;
+        case 2: limits = { 2, 2000, 8, 300, seed }; break;
+        case 3: limits = { 4, 2000, 12, 80, seed }; break;
+        case 4: limits = { 8, 1500, 16, 0, seed }; break;
+        default: limits = { 60, 3500, 20, 0, seed }; break;
+        }
+        // The first moves vary a little at every level, so that the games differ.
+        if (ply < 6)
+            limits.randomMargin = std::max(limits.randomMargin, 60);
+        return limits;
     }
-    // The first moves vary a little at every level, so that the games differ.
-    if (ply < 6)
-        limits.randomMargin = std::max(limits.randomMargin, 60);
-    return limits;
+
+    constexpr ui::Color DiscColor(Color side) { return side == Color::Black ? BlackDisc : WhiteDisc; }
+
+    // A little disc for the panel, with a rim and a gleam.
+    void DrawDisc(ui::Painter& painter, float x, float y, float radius, Color side)
+    {
+        painter.disc(x, y, radius, DiscRim);
+        painter.disc(x, y, radius - std::max(1.0f, radius * 0.1f), DiscColor(side));
+        painter.disc(x - radius * 0.28f, y - radius * 0.3f, radius * 0.38f, Rgba(255, 255, 255, side == Color::Black ? 46 : 120));
+    }
 }
-
-constexpr ui::Color DiscColor(Color side) { return side == Color::Black ? BlackDisc : WhiteDisc; }
-
-// A little disc for the panel, with a rim and a gleam.
-void DrawDisc(ui::Painter& painter, float x, float y, float radius, Color side)
-{
-    painter.Disc(x, y, radius, DiscRim);
-    painter.Disc(x, y, radius - std::max(1.0f, radius * 0.1f), DiscColor(side));
-    painter.Disc(x - radius * 0.28f, y - radius * 0.3f, radius * 0.38f, Rgba(255, 255, 255, side == Color::Black ? 46 : 120));
-}
-
-} // namespace
-
-// Setup --------------------------------------------------------------------------------------------
 
 App::App(HINSTANCE instance) : m_instance(instance)
 {
-    m_settings = Settings::Load();
+    m_settings = Settings::load();
     m_language = m_settings.language;
     m_theme = m_settings.theme;
     m_level = m_settings.level;
@@ -102,7 +97,7 @@ App::App(HINSTANCE instance) : m_instance(instance)
     ShowLoading();
 
     m_renderer = std::make_unique<render::Renderer>(pieces::BuildDisc(), m_context->Version());
-    m_renderer->SetTheme(Themes()[static_cast<std::size_t>(m_theme)]);
+    m_renderer->SetTheme(themes()[static_cast<std::size_t>(m_theme)]);
     m_view = std::make_unique<BoardView>();
 
     if (auto saved = reversi::Game::Deserialize(m_settings.game))
@@ -182,8 +177,8 @@ void App::ShowLoading()
     gl::glClear(gl::GL_COLOR_BUFFER_BIT);
     m_painter->Begin(m_width, m_height);
     const Rect screen{0, 0, static_cast<float>(m_width), static_cast<float>(m_height)};
-    m_painter->TextCentered(FontId::Display, screen, T(Str::Title), TextColor);
-    m_painter->Flush();
+    m_painter->text_centered(FontId::Display, screen, T(Str::Title), TextColor);
+    m_painter->flush();
     m_context->SwapBuffers();
 }
 
@@ -348,8 +343,6 @@ LRESULT App::HandleMessage(UINT message, WPARAM wParam, LPARAM lParam)
     return DefWindowProcW(m_window, message, wParam, lParam);
 }
 
-// The frame ----------------------------------------------------------------------------------------
-
 void App::Frame()
 {
     const auto now = std::chrono::steady_clock::now();
@@ -364,7 +357,7 @@ void App::Frame()
 
     Update(seconds);
 
-    const Theme& theme = Themes()[static_cast<std::size_t>(m_theme)];
+    const Theme& theme = themes()[static_cast<std::size_t>(m_theme)];
     const reversi::Position& position = m_game.Current();
     const bool ready = HumanToMove() && m_view->Settled();
     reversi::Square lastMove = reversi::Pass;
@@ -400,7 +393,7 @@ void App::Frame()
     m_cursorHand = false;
     m_painter->Begin(m_width, m_height);
     DrawInterface();
-    m_painter->Flush();
+    m_painter->flush();
     HandleBoardPointer();
 
     m_pointer.leftPressed = m_pointer.leftReleased = m_pointer.rightPressed = m_pointer.rightReleased = false;
@@ -413,8 +406,10 @@ void App::Update(float seconds)
 {
     const float target = m_panelVisible ? 1.0f : 0.0f;
     m_panelSlide += (target - m_panelSlide) * (1 - std::exp(-seconds * 12));
+
     if (std::abs(target - m_panelSlide) < 0.001f)
         m_panelSlide = target;
+
     const float panelSpace = (PanelWidth + PanelMargin) * Scale() * m_panelSlide;
     m_camera.SetSpace(1 - panelSpace / static_cast<float>(std::max(m_width, 1)));
     m_camera.Update(seconds);
@@ -429,11 +424,12 @@ void App::Update(float seconds)
     std::ranges::sort(m_events);
     const auto [first, last] = std::ranges::unique(m_events);
     m_events.erase(first, last);
+
     for (const BoardView::Event event : m_events) {
         switch (event) {
-        case BoardView::Event::Place: m_sound.Play(SoundBank::Effect::Place); break;
-        case BoardView::Event::Flip: m_sound.Play(SoundBank::Effect::Flip); break;
-        case BoardView::Event::Stack: m_sound.Play(SoundBank::Effect::Stack); break;
+        case BoardView::Event::Place: m_sound.play(SoundBank::Effect::Place); break;
+        case BoardView::Event::Flip: m_sound.play(SoundBank::Effect::Flip); break;
+        case BoardView::Event::Stack: m_sound.play(SoundBank::Effect::Stack); break;
         }
     }
 
@@ -458,12 +454,14 @@ void App::Update(float seconds)
             m_hintThinking = false;
         }
     }
+
     UpdateComputer(seconds);
 
     if (over && !m_announcedEnd) {
         m_announcedEnd = true;
-        m_sound.Play(SoundBank::Effect::GameOver);
+        m_sound.play(SoundBank::Effect::GameOver);
     }
+
     if (!m_game.Status().Over())
         m_announcedEnd = false;
 }
@@ -474,8 +472,6 @@ bool App::NeedsAnimation() const
            (m_panelSlide > 0 && m_panelSlide < 1) || (m_bannerFade > 0 && m_bannerFade < 1) || m_hintGlow > 0 || m_gesture != Gesture::None ||
            m_pointer.leftDown || m_pointer.rightDown || m_hoverSquare >= 0 || (!m_game.Status().Over() && !IsHuman(m_game.Current().SideToMove()));
 }
-
-// The game -----------------------------------------------------------------------------------------
 
 bool App::IsHuman(Color side) const
 {
@@ -558,7 +554,7 @@ void App::AnnouncePass()
     if (m_game.Moves().empty() || !m_game.Moves().back().IsPass() || m_game.Status().Over())
         return;
     ShowToast(std::string(T(m_game.Moves().back().side == Color::Black ? Str::BlackPasses : Str::WhitePasses)));
-    m_sound.Play(SoundBank::Effect::Pass);
+    m_sound.play(SoundBank::Effect::Pass);
 }
 
 void App::Undo()
@@ -619,7 +615,7 @@ void App::SetLevel(int level)
 void App::SetTheme(int theme)
 {
     m_theme = (theme % ThemeCount + ThemeCount) % ThemeCount;
-    m_renderer->SetTheme(Themes()[static_cast<std::size_t>(m_theme)]);
+    m_renderer->SetTheme(themes()[static_cast<std::size_t>(m_theme)]);
     Save();
 }
 
@@ -714,7 +710,7 @@ void App::Save()
         m_settings.window = placement.rcNormalPosition;
         m_settings.maximized = placement.showCmd == SW_SHOWMAXIMIZED;
     }
-    m_settings.Save();
+    m_settings.save();
 }
 
 void App::ToggleFullScreen()
@@ -738,8 +734,6 @@ void App::ToggleFullScreen()
         m_fullScreen = false;
     }
 }
-
-// Input --------------------------------------------------------------------------------------------
 
 Vec3 App::PointerOnPlane(float height) const
 {
@@ -997,32 +991,32 @@ bool App::Button(int id, Rect rect, std::string_view label, bool enabled, bool a
     const bool pressed = hover && m_activeWidget == id && m_pointer.leftDown;
     ui::Color fill = !enabled ? Rgba(255, 255, 255, 7) : pressed ? Rgba(255, 255, 255, 52) : hover ? Rgba(255, 255, 255, 34) : Rgba(255, 255, 255, 17);
     if (accent && enabled)
-        fill = ui::Mix(fill, ui::FromLinear(Themes()[static_cast<std::size_t>(m_theme)].accent, static_cast<float>(fill.a) / 255.0f * 2.2f), 0.6f);
-    m_painter->Fill(rect, 9 * scale, fill);
-    m_painter->TextCentered(FontId::Body, rect, label, enabled ? TextColor : ui::Fade(TextColor, 0.35f));
+        fill = ui::Mix(fill, ui::FromLinear(themes()[static_cast<std::size_t>(m_theme)].accent, static_cast<float>(fill.a) / 255.0f * 2.2f), 0.6f);
+    m_painter->fill(rect, 9 * scale, fill);
+    m_painter->text_centered(FontId::Body, rect, label, enabled ? TextColor : ui::Fade(TextColor, 0.35f));
     if (clicked)
-        m_sound.Play(SoundBank::Effect::Click);
+        m_sound.play(SoundBank::Effect::Click);
     return clicked;
 }
 
 int App::Selector(int id, Rect rect, std::string_view label, std::string_view value)
 {
     const float scale = Scale();
-    m_painter->Text(FontId::Body, rect.x, rect.y + (rect.height - m_painter->LineHeight(FontId::Body)) / 2, label, MutedColor);
+    m_painter->text(FontId::Body, rect.x, rect.y + (rect.height - m_painter->LineHeight(FontId::Body)) / 2, label, MutedColor);
     const float arrow = rect.height;
     const Rect right{rect.Right() - arrow, rect.y, arrow, rect.height};
     const Rect valueRect{rect.x + rect.width * 0.42f, rect.y, rect.width * 0.58f - arrow - 4 * scale, rect.height};
     const Rect left{valueRect.x - arrow - 4 * scale, rect.y, arrow, rect.height};
-    m_painter->Fill({left.Right() + 2 * scale, rect.y, right.x - left.Right() - 4 * scale, rect.height}, 9 * scale, Rgba(255, 255, 255, 9));
-    m_painter->TextCentered(FontId::Body, {left.Right(), rect.y, right.x - left.Right(), rect.height}, value, TextColor);
+    m_painter->fill({left.Right() + 2 * scale, rect.y, right.x - left.Right() - 4 * scale, rect.height}, 9 * scale, Rgba(255, 255, 255, 9));
+    m_painter->text_centered(FontId::Body, {left.Right(), rect.y, right.x - left.Right(), rect.height}, value, TextColor);
     int change = 0;
     if (Button(id, left, ""))
         change = -1;
     if (Button(id + 1, right, ""))
         change = 1;
     const float size = 5 * scale;
-    m_painter->Arrow(left.x + left.width / 2, left.y + left.height / 2, size * 0.8f, size, -1, TextColor);
-    m_painter->Arrow(right.x + right.width / 2, right.y + right.height / 2, size * 0.8f, size, 1, TextColor);
+    m_painter->arrow(left.x + left.width / 2, left.y + left.height / 2, size * 0.8f, size, -1, TextColor);
+    m_painter->arrow(right.x + right.width / 2, right.y + right.height / 2, size * 0.8f, size, 1, TextColor);
     return change;
 }
 
@@ -1041,8 +1035,8 @@ void App::DrawStatus(Rect area)
     ui::Painter& p = *m_painter;
     const reversi::GameStatus status = m_game.Status();
     const Color side = m_game.Current().SideToMove();
-    const ui::Color accent = ui::FromLinear(Themes()[static_cast<std::size_t>(m_theme)].accent);
-    p.Fill(area, 12 * scale, Rgba(255, 255, 255, 14));
+    const ui::Color accent = ui::FromLinear(themes()[static_cast<std::size_t>(m_theme)].accent);
+    p.fill(area, 12 * scale, Rgba(255, 255, 255, 14));
 
     // A disc of the side to move, or of the winner.
     const float discX = area.x + 22 * scale, discY = area.y + area.height / 2;
@@ -1062,10 +1056,10 @@ void App::DrawStatus(Rect area)
     }
     const float textX = area.x + 44 * scale;
     const float lineHeight = p.LineHeight(FontId::Heading);
-    p.Text(FontId::Heading, textX, area.y + area.height / 2 - lineHeight + 3 * scale, title, titleColor);
-    p.Text(FontId::Body, textX, area.y + area.height / 2 + 2 * scale, detail, MutedColor);
+    p.text(FontId::Heading, textX, area.y + area.height / 2 - lineHeight + 3 * scale, title, titleColor);
+    p.text(FontId::Body, textX, area.y + area.height / 2 + 2 * scale, detail, MutedColor);
     if (m_computerThinking || m_computerResult || m_hintThinking)
-        p.Spinner(area.Right() - 22 * scale, area.y + area.height / 2, 8 * scale, 2.2f * scale, m_time * 5.0f, accent);
+        p.spinner(area.Right() - 22 * scale, area.y + area.height / 2, 8 * scale, 2.2f * scale, m_time * 5.0f, accent);
 }
 
 // The players with their discs, and a bar shared out between the colors.
@@ -1080,28 +1074,28 @@ void App::DrawScore(Rect area)
         const float textY = y + (rowHeight - p.LineHeight(FontId::Body)) / 2;
         const bool toMove = !status.Over() && m_game.Current().SideToMove() == side;
         DrawDisc(p, area.x + 9 * scale, y + rowHeight / 2, 7 * scale, side);
-        p.Text(FontId::Body, area.x + 26 * scale, textY, std::format("{}  ·  {}", T(side == Color::Black ? Str::Black : Str::White), PlayerName(side)),
+        p.text(FontId::Body, area.x + 26 * scale, textY, std::format("{}  ·  {}", T(side == Color::Black ? Str::Black : Str::White), PlayerName(side)),
                toMove ? TextColor : ui::Fade(TextColor, 0.75f));
         const std::string count = std::to_string(side == Color::Black ? status.black : status.white);
-        p.Text(FontId::Heading, area.Right() - p.Measure(FontId::Heading, count), y + (rowHeight - p.LineHeight(FontId::Heading)) / 2, count, TextColor);
+        p.text(FontId::Heading, area.Right() - p.Measure(FontId::Heading, count), y + (rowHeight - p.LineHeight(FontId::Heading)) / 2, count, TextColor);
         y += rowHeight;
     }
     y += 6 * scale;
     const Rect bar{area.x, y, area.width, 6 * scale};
     const float share = static_cast<float>(status.black) / static_cast<float>(std::max(1, status.black + status.white));
-    p.Fill(bar, 3 * scale, Rgba(238, 236, 230, 220));
-    p.Fill({bar.x, bar.y, std::max(bar.height, bar.width * share), bar.height}, 3 * scale, Rgba(10, 10, 12, 235));
-    p.Fill({bar.x + bar.width / 2 - 0.5f * scale, bar.y - 2 * scale, 1 * scale, bar.height + 4 * scale}, 0, Rgba(255, 255, 255, 90));
+    p.fill(bar, 3 * scale, Rgba(238, 236, 230, 220));
+    p.fill({bar.x, bar.y, std::max(bar.height, bar.width * share), bar.height}, 3 * scale, Rgba(10, 10, 12, 235));
+    p.fill({bar.x + bar.width / 2 - 0.5f * scale, bar.y - 2 * scale, 1 * scale, bar.height + 4 * scale}, 0, Rgba(255, 255, 255, 90));
 }
 
 void App::DrawMoveList(Rect area)
 {
     const float scale = Scale();
     ui::Painter& p = *m_painter;
-    p.Fill(area, 12 * scale, Rgba(0, 0, 0, 40));
+    p.fill(area, 12 * scale, Rgba(0, 0, 0, 40));
     const auto moves = m_game.Moves();
     if (moves.empty()) {
-        p.TextCentered(FontId::Body, area, T(Str::NoMovesYet), MutedColor);
+        p.text_centered(FontId::Body, area, T(Str::NoMovesYet), MutedColor);
         return;
     }
 
@@ -1124,26 +1118,26 @@ void App::DrawMoveList(Rect area)
 
     const int first = static_cast<int>(m_moveScroll);
     const float numberWidth = 40 * scale, columnWidth = (inner.width - numberWidth) / 2;
-    const ui::Color accent = ui::FromLinear(Themes()[static_cast<std::size_t>(m_theme)].accent);
+    const ui::Color accent = ui::FromLinear(themes()[static_cast<std::size_t>(m_theme)].accent);
     for (int row = first; row < std::min(rows, first + visible); ++row) {
         const float y = inner.y + static_cast<float>(row - first) * rowHeight;
         const std::string number = std::format("{}.", row + 1);
-        p.Text(FontId::Body, inner.x + numberWidth - 10 * scale - p.Measure(FontId::Body, number), y + 3 * scale, number, MutedColor);
+        p.text(FontId::Body, inner.x + numberWidth - 10 * scale - p.Measure(FontId::Body, number), y + 3 * scale, number, MutedColor);
         for (int column = 0; column < 2; ++column) {
             const int ply = row * 2 + column - offset;
             if (ply < 0 || ply >= static_cast<int>(moves.size()))
                 continue;
             const float x = inner.x + numberWidth + static_cast<float>(column) * columnWidth;
             if (ply == static_cast<int>(moves.size()) - 1)
-                p.Fill({x - 6 * scale, y + 1 * scale, columnWidth - 6 * scale, rowHeight - 2 * scale}, 7 * scale, ui::Fade(accent, 0.28f));
+                p.fill({x - 6 * scale, y + 1 * scale, columnWidth - 6 * scale, rowHeight - 2 * scale}, 7 * scale, ui::Fade(accent, 0.28f));
             const reversi::MoveRecord& record = moves[static_cast<std::size_t>(ply)];
             if (record.IsPass()) {
-                p.Text(FontId::Body, x, y + 3 * scale, T(Str::Pass), MutedColor);
+                p.text(FontId::Body, x, y + 3 * scale, T(Str::Pass), MutedColor);
             }
             else {
                 // The square, and how many discs it turned.
-                const float width = p.Text(FontId::Body, x, y + 3 * scale, reversi::SquareName(record.square), TextColor);
-                p.Text(FontId::Body, x + width + 8 * scale, y + 3 * scale, std::format("+{}", std::popcount(record.flipped)), ui::Fade(MutedColor, 0.75f));
+                const float width = p.text(FontId::Body, x, y + 3 * scale, reversi::SquareName(record.square), TextColor);
+                p.text(FontId::Body, x + width + 8 * scale, y + 3 * scale, std::format("+{}", std::popcount(record.flipped)), ui::Fade(MutedColor, 0.75f));
             }
         }
     }
@@ -1151,7 +1145,7 @@ void App::DrawMoveList(Rect area)
         // A thin scroll bar.
         const float barHeight = inner.height * static_cast<float>(visible) / static_cast<float>(rows);
         const float barY = inner.y + (inner.height - barHeight) * (m_moveScroll / maxScroll);
-        p.Fill({area.Right() - 5 * scale, barY, 3 * scale, barHeight}, 1.5f * scale, Rgba(255, 255, 255, 50));
+        p.fill({area.Right() - 5 * scale, barY, 3 * scale, barHeight}, 1.5f * scale, Rgba(255, 255, 255, 50));
     }
 }
 
@@ -1164,15 +1158,15 @@ void App::DrawPanel()
     const Rect panel = PanelRect();
     if (panel.Contains(m_pointer.x, m_pointer.y) && (m_pointer.leftPressed || m_pointer.rightPressed))
         m_pointer.consumed = true;
-    p.Shadow(panel, 22 * scale, Rgba(0, 0, 0, 70));
-    p.Fill(panel, 18 * scale, Rgba(16, 18, 26, 120));
-    p.Outline(panel, 18 * scale, Rgba(255, 255, 255, 24));
+    p.shadow(panel, 22 * scale, Rgba(0, 0, 0, 70));
+    p.fill(panel, 18 * scale, Rgba(16, 18, 26, 120));
+    p.outline(panel, 18 * scale, Rgba(255, 255, 255, 24));
 
     const float pad = 20 * scale;
     const float x = panel.x + pad, width = panel.width - 2 * pad;
     float y = panel.y + pad;
 
-    p.Text(FontId::Heading, x, y, T(Str::Title), TextColor);
+    p.text(FontId::Heading, x, y, T(Str::Title), TextColor);
     if (Button(HelpButton, {panel.Right() - pad - 30 * scale, y - 2 * scale, 30 * scale, 30 * scale}, "?"))
         m_helpVisible = !m_helpVisible;
     y += 44 * scale;
@@ -1185,7 +1179,7 @@ void App::DrawPanel()
     // From the bottom up: the footer, the settings and the buttons; the moves take the space between.
     float bottom = panel.Bottom() - pad;
     const float footerHeight = p.LineHeight(FontId::Body);
-    p.TextCentered(FontId::Body, {x, bottom - footerHeight, width, footerHeight}, T(Str::Footer), ui::Fade(MutedColor, 0.8f));
+    p.text_centered(FontId::Body, {x, bottom - footerHeight, width, footerHeight}, T(Str::Footer), ui::Fade(MutedColor, 0.8f));
     bottom -= footerHeight + 14 * scale;
 
     const float rowHeight = 34 * scale, gap = 8 * scale;
@@ -1202,7 +1196,7 @@ void App::DrawPanel()
     bottom -= gap;
 
     const std::array<std::string_view, 4> modes{T(Str::ModeBlack), T(Str::ModeWhite), T(Str::ModeTwoPlayers), T(Str::ModeDemo)};
-    const Theme& theme = Themes()[static_cast<std::size_t>(m_theme)];
+    const Theme& theme = themes()[static_cast<std::size_t>(m_theme)];
     struct Choice {
         int id;
         Str label;
@@ -1246,13 +1240,13 @@ void App::DrawPanel()
         RequestHint();
     bottom -= 16 * scale;
 
-    p.Text(FontId::Body, x, y, T(Str::Moves), MutedColor);
+    p.text(FontId::Body, x, y, T(Str::Moves), MutedColor);
     y += p.LineHeight(FontId::Body) + 6 * scale;
     if (bottom - y > 40 * scale)
         DrawMoveList({x, y, width, bottom - y});
 }
 
-void App::DrawBanner()
+void App::DrawBanner() const
 {
     if (m_bannerFade <= 0.001f)
         return;
@@ -1260,11 +1254,11 @@ void App::DrawBanner()
     ui::Painter& p = *m_painter;
     const reversi::GameStatus status = m_bannerStatus;
     const Rect card = BannerCard();
-    p.Shadow(card, 24 * scale, ui::Fade(Rgba(0, 0, 0, 120), m_bannerFade));
-    p.Fill(card, 18 * scale, ui::Fade(Rgba(14, 16, 24, 150), m_bannerFade));
-    p.Outline(card, 18 * scale, ui::Fade(ui::FromLinear(Themes()[static_cast<std::size_t>(m_theme)].accent), 0.6f * m_bannerFade));
-    p.TextCentered(FontId::Display, {card.x, card.y + 8 * scale, card.width, 48 * scale}, T(ResultTitle(status.result)), ui::Fade(TextColor, m_bannerFade));
-    p.TextCentered(FontId::Body, {card.x, card.y + 54 * scale, card.width, 26 * scale}, ResultDetail(status), ui::Fade(MutedColor, m_bannerFade));
+    p.shadow(card, 24 * scale, ui::Fade(Rgba(0, 0, 0, 120), m_bannerFade));
+    p.fill(card, 18 * scale, ui::Fade(Rgba(14, 16, 24, 150), m_bannerFade));
+    p.outline(card, 18 * scale, ui::Fade(ui::FromLinear(themes()[static_cast<std::size_t>(m_theme)].accent), 0.6f * m_bannerFade));
+    p.text_centered(FontId::Display, {card.x, card.y + 8 * scale, card.width, 48 * scale}, T(ResultTitle(status.result)), ui::Fade(TextColor, m_bannerFade));
+    p.text_centered(FontId::Body, {card.x, card.y + 54 * scale, card.width, 26 * scale}, ResultDetail(status), ui::Fade(MutedColor, m_bannerFade));
 }
 
 void App::DrawToasts()
@@ -1277,9 +1271,9 @@ void App::DrawToasts()
         const float fade = std::min({1.0f, toast->age * 6, (2.8f - toast->age) * 3});
         const float width = p.Measure(FontId::Body, toast->text) + 40 * scale, height = 36 * scale;
         const Rect pill{free.x + (free.width - width) / 2, y - height, width, height};
-        p.Shadow(pill, 14 * scale, ui::Fade(Rgba(0, 0, 0, 110), fade));
-        p.Fill(pill, height / 2, ui::Fade(Rgba(20, 22, 30, 225), fade));
-        p.TextCentered(FontId::Body, pill, toast->text, ui::Fade(TextColor, fade));
+        p.shadow(pill, 14 * scale, ui::Fade(Rgba(0, 0, 0, 110), fade));
+        p.fill(pill, height / 2, ui::Fade(Rgba(20, 22, 30, 225), fade));
+        p.text_centered(FontId::Body, pill, toast->text, ui::Fade(TextColor, fade));
         y -= height + 8 * scale;
     }
 }
@@ -1288,7 +1282,7 @@ void App::DrawHelp()
 {
     const float scale = Scale();
     ui::Painter& p = *m_painter;
-    p.Fill({0, 0, static_cast<float>(m_width), static_cast<float>(m_height)}, 0, Rgba(0, 0, 0, 110));
+    p.fill({0, 0, static_cast<float>(m_width), static_cast<float>(m_height)}, 0, Rgba(0, 0, 0, 110));
 
     struct Line {
         std::string_view keys;
@@ -1318,23 +1312,23 @@ void App::DrawHelp()
     }};
     const float rowHeight = HelpRow * scale, keysWidth = 200 * scale, pad = HelpPad * scale;
     const Rect card = HelpCard();
-    const ui::Color accent = ui::FromLinear(Themes()[static_cast<std::size_t>(m_theme)].accent);
-    p.Shadow(card, 26 * scale, Rgba(0, 0, 0, 140));
-    p.Fill(card, 20 * scale, Rgba(18, 20, 28, 175));
-    p.Outline(card, 20 * scale, Rgba(255, 255, 255, 30));
-    p.Text(FontId::Heading, card.x + pad, card.y + pad - 4 * scale, T(Str::Controls), TextColor);
+    const ui::Color accent = ui::FromLinear(themes()[static_cast<std::size_t>(m_theme)].accent);
+    p.shadow(card, 26 * scale, Rgba(0, 0, 0, 140));
+    p.fill(card, 20 * scale, Rgba(18, 20, 28, 175));
+    p.outline(card, 20 * scale, Rgba(255, 255, 255, 30));
+    p.text(FontId::Heading, card.x + pad, card.y + pad - 4 * scale, T(Str::Controls), TextColor);
     float y = card.y + pad + 44 * scale;
     for (const Line& line : lines) {
-        p.Text(FontId::Body, card.x + pad, y, line.keys, accent);
-        p.Text(FontId::Body, card.x + pad + keysWidth, y, T(line.action), TextColor);
+        p.text(FontId::Body, card.x + pad, y, line.keys, accent);
+        p.text(FontId::Body, card.x + pad + keysWidth, y, T(line.action), TextColor);
         y += rowHeight;
     }
     // The rules, in a few sentences.
     y += 12 * scale;
-    p.Text(FontId::Body, card.x + pad, y, T(Str::Rules), accent);
+    p.text(FontId::Body, card.x + pad, y, T(Str::Rules), accent);
     for (const std::string& line : RulesLines()) {
         y += rowHeight;
-        p.Text(FontId::Body, card.x + pad, y, line, MutedColor);
+        p.text(FontId::Body, card.x + pad, y, line, MutedColor);
     }
     if (Button(HelpClose, {card.Right() - pad - 30 * scale, card.y + pad - 8 * scale, 30 * scale, 30 * scale}, "×") ||
         (m_pointer.leftPressed && !card.Contains(m_pointer.x, m_pointer.y)))

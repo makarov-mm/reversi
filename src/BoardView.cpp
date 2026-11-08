@@ -11,32 +11,39 @@ using namespace math;
 using reversi::Color;
 
 namespace {
+    float Ease(float t)
+    {
+	    return t * t * t * (t * (t * 6 - 15) + 10);
+    }
 
-float Ease(float t) { return t * t * t * (t * (t * 6 - 15) + 10); }
-float Approach(float value, float target, float step) { return value < target ? std::min(value + step, target) : std::max(value - step, target); }
+    float Approach(float value, float target, float step)
+    {
+	    return value < target ? std::min(value + step, target) : std::max(value - step, target);
+    }
 
-constexpr float FadeTime = 0.45f;
-constexpr float FlightTime = 0.55f;
-constexpr float TurnTime = 0.36f;
-constexpr float TurnLift = 0.42f;   // enough for a disc on its edge to clear the board
-constexpr float WaveStep = 0.075f;  // between the discs one square further from the one placed
-constexpr int StackHeight = 10;     // discs in a stack beside the board
-constexpr float Thickness = 2 * pieces::HalfHeight;
+    constexpr float FadeTime = 0.45f;
+    constexpr float FlightTime = 0.55f;
+    constexpr float TurnTime = 0.36f;
+    constexpr float TurnLift = 0.42f;   // enough for a disc on its edge to clear the board
+    constexpr float WaveStep = 0.075f;  // between the discs one square further from the one placed
+    constexpr int StackHeight = 10;     // discs in a stack beside the board
+    constexpr float Thickness = 2 * pieces::HalfHeight;
 
-constexpr int PileOf(Color color) { return color == Color::Black ? 0 : 1; }
+    constexpr int PileOf(Color color) { return color == Color::Black ? 0 : 1; }
 
-// The level axis a disc turns about to roll away from a point.
-Vec3 AxisAwayFrom(Vec3 from, Vec3 to)
-{
-    Vec3 direction = to - from;
-    direction.y = 0;
-    if (Length(direction) < 1e-4f)
-        return {1, 0, 0};
-    direction = Normalize(direction);
-    return {direction.z, 0, -direction.x};
+    // The level axis a disc turns about to roll away from a point.
+    Vec3 AxisAwayFrom(Vec3 from, Vec3 to)
+    {
+        Vec3 direction = to - from;
+        direction.y = 0;
+
+        if (Length(direction) < 1e-4f)
+            return { .x = 1, .y = 0, .z = 0 };
+
+        direction = Normalize(direction);
+        return { .x = direction.z, .y = 0, .z = -direction.x };
+    }
 }
-
-} // namespace
 
 float BoardView::Random()
 {
@@ -298,6 +305,7 @@ float BoardView::Lift(const Disc& disc)
 {
     if (!disc.turning || disc.turnDelay > 0)
         return 0;
+
     return disc.turnLift * std::sin(Pi * std::min(disc.turnTime / disc.turnDuration, 1.0f));
 }
 
@@ -305,6 +313,7 @@ std::vector<render::DiscDraw> BoardView::Draws(reversi::Square lastMove, Vec3 ac
 {
     std::vector<render::DiscDraw> draws;
     draws.reserve(m_discs.size());
+
     for (const Disc& disc : m_discs) {
         float angle = 0;
         if (disc.turning && disc.turnDelay <= 0)
@@ -323,20 +332,25 @@ std::vector<render::DiscDraw> BoardView::Draws(reversi::Square lastMove, Vec3 ac
             draw.mark = 1;
         draws.push_back(draw);
     }
+
     return draws;
 }
 
 std::vector<render::ContactShadow> BoardView::Contacts() const
 {
     std::vector<render::ContactShadow> contacts;
+
     for (const Disc& disc : m_discs) {
         // In a stack only the lowest disc touches the table.
         if (disc.square == -1 && !disc.flying && disc.level % StackHeight != 0)
             continue;
+
         const float height = disc.position.y - GroundAt(disc.position) + Lift(disc) + 0.09f * disc.lean;
         const float strength = 0.72f * (1 - SmoothStep(0.0f, 0.8f, height)) * (1 - disc.dissolve);
+
         if (strength > 0.01f)
-            contacts.push_back({disc.position.x, disc.position.z, pieces::Radius * (1.05f + height * 0.6f), strength});
+            contacts.push_back({ .x = disc.position.x, .z = disc.position.z, .radius = pieces::Radius * (1.05f + height * 0.6f), .strength = strength });
     }
+
     return contacts;
 }

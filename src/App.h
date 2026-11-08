@@ -99,14 +99,14 @@ private:
     void DrawScore(ui::Rect area);
     void DrawMoveList(ui::Rect area);
     void DrawStatus(ui::Rect area);
-    void DrawBanner();
+    void DrawBanner() const;
     void DrawHelp();
     void DrawToasts();
     bool Button(int id, ui::Rect rect, std::string_view label, bool enabled = true, bool accent = false);
     // A label with a value stepped by two arrows; returns -1 or 1 when one is clicked, else 0.
     int Selector(int id, ui::Rect rect, std::string_view label, std::string_view value);
     void ShowToast(std::string text);
-    std::string_view T(Str id) const { return Tr(id, m_language); }
+    std::string_view T(Str id) const { return tr(id, m_language); }
     std::string PlayerName(reversi::Color side) const;
     // The discs at the end, and why it ended.
     std::string ResultDetail(reversi::GameStatus status) const;

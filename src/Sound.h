@@ -12,7 +12,7 @@ public:
     enum class Effect { Place, Flip, Stack, Pass, GameOver, Click, Count };
 
     SoundBank();
-    void Play(Effect effect) const;
+    void play(Effect effect) const;
 
     bool enabled = true;
 

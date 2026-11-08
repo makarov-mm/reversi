@@ -19,6 +19,6 @@ struct Settings {
     bool maximized = false;
     std::string game; // see reversi::Game::Serialize
 
-    static Settings Load();
-    void Save() const;
+    static Settings load();
+    void save() const;
 };

@@ -84,4 +84,4 @@ enum class Str {
     Count
 };
 
-std::string_view Tr(Str id, Language language);
+std::string_view tr(Str id, Language language);
